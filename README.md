@@ -2,8 +2,6 @@
 
 A modern, glass-morphism styled Telugu news reader with AI-powered article summarization. Fetches news from Eenadu RSS feeds and provides instant 2-sentence summaries in Telugu using Kimi K2.5 AI.
 
-![Glass UI](news-mockup.png)
-
 ## Features
 
 ### UI/UX
