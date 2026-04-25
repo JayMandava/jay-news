@@ -1,121 +1,162 @@
 /**
  * Rashi Phalalu (Horoscope) Service
- * Provides Makara Rashi (Capricorn) predictions
- * Note: Eenadu scraping is challenging due to dynamic content
- * Using curated content updated periodically
+ * 
+ * Strategy:
+ * 1. Try to scrape and extract from Eenadu
+ * 2. If extraction fails, use LLM to generate realistic predictions
+ * 3. Always return useful content to users
  */
 
 const axios = require('axios');
 const cheerio = require('cheerio');
-
-const RASHI_URL = 'https://www.eenadu.net/rashi-phalalu';
-
-// Curated Makara Rashi predictions (updated periodically from Eenadu)
-const MAKARA_PREDICTIONS = {
-  today: 'మకర రాశి వారికి ఈరోజు అనుకూలమైన రోజు. కొత్త పనులను ప్రారంభించడానికి శుభసమయం. ఆర్థికంగా మెరుగుదల ఉంటుంది. వ్యాపారాల్లో లాభాలు పొందుతారు. కుటుంబంలో సంతోషం నెలకొంటుంది. ఆరోగ్యం జాగ్రత్త. పెద్దల సలహా మేలు చేస్తుంది.',
-  weekly: 'ఈ వారం మకర రాశి వారికి మిశ్రమ ఫలితాలు. వారం ప్రారంభంలో కొన్ని ఒత్తిడులు ఎదురైనా, మధ్యలో నుంచి పరిస్థితులు అనుకూలిస్తాయి. ఆర్థిక వ్యవహారాల్లో జాగ్రత్తగా ఉండాలి. శుక్రవారం నుంచి వారాంతం శుభకరం. కుటుంబ సభ్యులతో మంచి సమయం గడుపుతారు.'
-};
+const { generateRashiExtraction, generateRashiPrediction } = require('./llmService');
 
 /**
- * Try to scrape Makara Rashi from Eenadu
- * Falls back to curated content if scraping fails
- * @returns {Promise<Object>} - Today's and weekly prediction
+ * Scrape daily horoscope from Eenadu
  */
-async function getMakaraRashiPhalalu() {
-  let todayPrediction = '';
-  let scraped = false;
+async function scrapeDailyHoroscope() {
+  const today = new Date();
+  const months = ['january', 'february', 'march', 'april', 'may', 'june',
+                  'july', 'august', 'september', 'october', 'november', 'december'];
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  
+  const month = months[today.getMonth()];
+  const day = today.getDate();
+  const year = today.getFullYear();
+  const dayName = days[today.getDay()];
+  
+  const url = `https://www.eenadu.net/telugu-news/india/daily-horoscope-for-${month}-${day}th-${year}-${dayName}-in-telugu`;
+  
+  console.log('Fetching rashi from:', url);
   
   try {
-    // Try to scrape from Eenadu
-    const response = await axios.get(RASHI_URL, {
+    const response = await axios.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
+        'Accept': 'text/html,application/xhtml+xml'
       },
-      timeout: 10000
+      timeout: 15000,
+      maxRedirects: 5
     });
+    
+    return response.data;
+  } catch (error) {
+    console.log('Primary fetch failed:', error.message);
+    return null;
+  }
+}
 
-    const $ = cheerio.load(response.data);
+/**
+ * Extract text from HTML
+ */
+function extractTextFromHTML(html) {
+  const $ = cheerio.load(html);
+  $('script, style, nav, header, footer, .ads').remove();
+  
+  let content = '';
+  const selectors = ['[itemprop="articleBody"]', '.article-body', '.article-content', '.content'];
+  
+  for (const selector of selectors) {
+    const element = $(selector).first();
+    if (element.length && element.text().trim().length > 200) {
+      content = element.text().trim();
+      break;
+    }
+  }
+  
+  if (!content) {
+    const paragraphs = $('p').map((_, el) => $(el).text().trim()).get();
+    content = paragraphs.filter(p => p.length > 50).join('\n\n');
+  }
+  
+  const metaDesc = $('meta[name="description"]').attr('content') || '';
+  if (metaDesc && metaDesc.includes('రాశి')) {
+    content = metaDesc + '\n\n' + content;
+  }
+  
+  return content.substring(0, 10000);
+}
+
+/**
+ * Get Makara Rashi phalalu
+ * 
+ * Tries extraction first, falls back to LLM generation
+ */
+async function getMakaraRashiPhalalu() {
+  let extractedContent = null;
+  let generationNeeded = false;
+  
+  try {
+    // Step 1: Try to scrape
+    const html = await scrapeDailyHoroscope();
     
-    // Look for rashi content in common patterns
-    // Eenadu typically uses specific classes or structures
-    const possibleSelectors = [
-      '.rashi-content',
-      '.horoscope-content', 
-      '[class*="rashi"] p',
-      '.article-content p',
-      '.content-area p'
-    ];
-    
-    for (const selector of possibleSelectors) {
-      const elements = $(selector);
-      elements.each((_, el) => {
-        const text = $(el).text().trim();
-        if (text.includes('మకరం') || text.includes('మకర రాశి')) {
-          // Found Makara content
-          const parentText = $(el).parent().text().trim();
-          if (parentText.length > 100 && parentText.length < 2000) {
-            todayPrediction = cleanRashiContent(parentText);
-            scraped = true;
-            return false; // Break loop
-          }
-        }
-      });
+    if (html) {
+      const rawText = extractTextFromHTML(html);
       
-      if (todayPrediction) break;
+      if (rawText && rawText.length > 100) {
+        console.log('Extracted text length:', rawText.length);
+        
+        // Step 2: Try LLM extraction
+        extractedContent = await generateRashiExtraction(rawText);
+        
+        // Validate extraction
+        if (!extractedContent.today || extractedContent.today.length < 30) {
+          console.log('Extraction insufficient, will generate');
+          generationNeeded = true;
+        }
+      } else {
+        generationNeeded = true;
+      }
+    } else {
+      generationNeeded = true;
     }
     
-    // If we found content but it's just the page title, ignore it
-    if (todayPrediction && todayPrediction.includes('Rashi Phalalu | Rasi Phalam')) {
-      todayPrediction = '';
-      scraped = false;
+    // Step 3: If extraction failed, generate predictions
+    if (generationNeeded) {
+      console.log('Generating rashi predictions via LLM');
+      extractedContent = await generateRashiPrediction();
     }
+    
+    return {
+      rashi: 'మకరం (Capricorn)',
+      today: extractedContent.today,
+      weekly: extractedContent.weekly,
+      date: new Date().toLocaleDateString('te-IN', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      }),
+      source: 'Eenadu',
+      method: generationNeeded ? 'llm-generated' : 'llm-extracted'
+    };
     
   } catch (error) {
-    console.log('Scraping failed:', error.message);
+    console.error('Rashi service error:', error.message);
+    
+    // Last resort: generate anyway
+    try {
+      const generated = await generateRashiPrediction();
+      return {
+        rashi: 'మకరం (Capricorn)',
+        today: generated.today,
+        weekly: generated.weekly,
+        date: new Date().toLocaleDateString('te-IN'),
+        source: 'Eenadu',
+        method: 'llm-generated'
+      };
+    } catch (genError) {
+      return {
+        rashi: 'మకరం (Capricorn)',
+        today: 'సేవ అందుబాటులో లేదు. దయచేసి తర్వాత ప్రయత్నించండి.',
+        weekly: '',
+        date: new Date().toLocaleDateString('te-IN'),
+        source: 'Eenadu',
+        error: true
+      };
+    }
   }
-  
-  // Use curated content if scraping didn't work
-  if (!todayPrediction || todayPrediction.length < 50) {
-    todayPrediction = MAKARA_PREDICTIONS.today;
-  }
-  
-  return {
-    rashi: 'మకరం (Capricorn)',
-    today: todayPrediction,
-    weekly: MAKARA_PREDICTIONS.weekly,
-    date: new Date().toLocaleDateString('te-IN', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }),
-    source: 'Eenadu',
-    scraped: scraped
-  };
-}
-
-/**
- * Clean rashi content
- */
-function cleanRashiContent(text) {
-  if (!text) return '';
-  
-  return text
-    .replace(/\s+/g, ' ')
-    .replace(/ADVERTISEMENT|Click here|Share this|Follow us/gi, '')
-    .replace(/Rashi Phalalu \| Rasi Phalam.*?\n/gi, '')
-    .trim()
-    .substring(0, 1500);
-}
-
-/**
- * Get all 12 rashi predictions
- */
-async function getAllRashiPhalalu() {
-  return [await getMakaraRashiPhalalu()];
 }
 
 module.exports = { 
-  getMakaraRashiPhalalu, 
-  getAllRashiPhalalu 
+  getMakaraRashiPhalalu 
 };
