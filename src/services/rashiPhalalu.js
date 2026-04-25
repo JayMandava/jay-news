@@ -2,31 +2,37 @@
  * Rashi Phalalu (Horoscope) Service
  * 
  * Strategy:
- * 1. Scrape Eenadu horoscope page
- * 2. Try to extract Makara Rashi with code (my best effort)
- * 3. If can't figure out / insufficient, give raw input to LLM
- * 4. LLM extracts ONLY - specifically instructed NOT to create/make up content
- * 5. Present extracted content in FE (could be empty if not found)
+ * 1. Scrape individual Makara Rashi page from Eenadu
+ * 2. Extract today's and weekly predictions from specific HTML structure
+ * 3. Use LLM only for cleaning/parsing if extraction is messy
  */
 
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { extractMakaraRashiWithLLM } = require('./llmService');
 
-const RASHI_URL = 'https://www.eenadu.net/rashi-phalalu';
+// Eenadu individual rashi URLs
+const RASHI_URLS = {
+  makara: 'https://www.eenadu.net/rashi-phalalu/makar-rashi-today',
+  // Other rashis available if needed:
+  // mesh: 'https://www.eenadu.net/rashi-phalalu/mesh-rashi-today',
+  // vrushabha: 'https://www.eenadu.net/rashi-phalalu/vrushabha-rashi-today',
+  // etc.
+};
 
 /**
- * Scrape Eenadu rashi page
+ * Scrape Makara Rashi page from Eenadu
  */
-async function scrapeRashiPage() {
+async function scrapeMakaraRashi() {
   try {
-    const response = await axios.get(RASHI_URL, {
+    const response = await axios.get(RASHI_URLS.makara, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml'
       },
-      timeout: 15000
+      timeout: 15000,
+      maxRedirects: 5
     });
+    
     return response.data;
   } catch (error) {
     console.log('Scrape failed:', error.message);
@@ -35,49 +41,67 @@ async function scrapeRashiPage() {
 }
 
 /**
- * Try to extract Makara Rashi with code (best effort)
+ * Extract predictions from HTML
+ * Structure: <h2 class="ttl">ఈరోజు (date)</h2> followed by <p>prediction</p>
  */
-function extractWithCode(html) {
+function extractFromHTML(html) {
   const $ = cheerio.load(html);
   
-  // Remove non-content elements
-  $('script, style, nav, header, footer, .ads').remove();
+  // Remove scripts and styles
+  $('script, style, nav, header, footer').remove();
   
-  // Get all text content
-  let fullText = $('body').text();
+  const results = {
+    today: '',
+    weekly: '',
+    date: ''
+  };
   
-  // Clean up whitespace
-  fullText = fullText.replace(/\s+/g, ' ').trim();
+  // Find all h2.ttl elements (these contain ఈరోజు and ఈవారం labels)
+  $('h2.ttl, h3.ttl').each((_, element) => {
+    const labelText = $(element).text().trim();
+    
+    // Get the next paragraph (the prediction)
+    let prediction = '';
+    let nextEl = $(element).next();
+    
+    // Keep getting text until we hit another heading or non-content element
+    while (nextEl.length && !nextEl.is('h2, h3, h4, .ttl')) {
+      if (nextEl.is('p, div')) {
+        const text = nextEl.text().trim();
+        if (text.length > 20) {
+          prediction += text + ' ';
+        }
+      }
+      nextEl = nextEl.next();
+    }
+    
+    prediction = prediction.trim();
+    
+    // Categorize as today or weekly
+    if (labelText.includes('ఈరోజు') || labelText.includes('Today')) {
+      results.today = prediction;
+      // Extract date from label (e.g., "ఈరోజు (25-04-2026)")
+      const dateMatch = labelText.match(/\(([^)]+)\)/);
+      if (dateMatch) {
+        results.date = dateMatch[1];
+      }
+    } else if (labelText.includes('ఈవారం') || labelText.includes('Week')) {
+      results.weekly = prediction;
+    }
+  });
   
-  // Look for Makara Rashi section
-  const makaraIndex = fullText.indexOf('మకరం');
-  if (makaraIndex === -1) {
-    return { found: false, reason: 'మకరం not found in text', text: fullText.substring(0, 3000) };
-  }
+  return results;
+}
+
+/**
+ * Fallback: Extract with LLM if cheerio fails
+ */
+async function extractWithLLM(html) {
+  const $ = cheerio.load(html);
+  const bodyText = $('body').text().substring(0, 6000);
   
-  // Try to find section boundaries
-  // Look for next rashi (కుంభం) as end marker
-  const kumbhaIndex = fullText.indexOf('కుంభం', makaraIndex);
-  
-  let makaraSection = '';
-  if (kumbhaIndex > makaraIndex) {
-    makaraSection = fullText.substring(makaraIndex, kumbhaIndex);
-  } else {
-    // Take reasonable chunk after మకరం
-    makaraSection = fullText.substring(makaraIndex, makaraIndex + 1500);
-  }
-  
-  // Check if we got meaningful content
-  if (makaraSection.length < 100 || makaraSection.includes('Rashi Phalalu | Rasi Phalam')) {
-    return { 
-      found: false, 
-      reason: 'Insufficient or meta content only', 
-      text: fullText.substring(0, 5000),
-      makaraSection: makaraSection
-    };
-  }
-  
-  return { found: true, content: makaraSection };
+  const { extractMakaraRashiWithLLM } = require('./llmService');
+  return await extractMakaraRashiWithLLM(bodyText);
 }
 
 /**
@@ -85,8 +109,9 @@ function extractWithCode(html) {
  */
 async function getMakaraRashiPhalalu() {
   try {
-    // Step 1: Scrape
-    const html = await scrapeRashiPage();
+    // Step 1: Scrape the dedicated Makara Rashi page
+    const html = await scrapeMakaraRashi();
+    
     if (!html) {
       return {
         rashi: 'మకరం (Capricorn)',
@@ -98,61 +123,42 @@ async function getMakaraRashiPhalalu() {
       };
     }
     
-    // Step 2: Try to extract with code (my best effort)
-    const codeResult = extractWithCode(html);
+    // Step 2: Extract with cheerio
+    let results = extractFromHTML(html);
     
-    let makaraContent = '';
-    let extractionMethod = '';
-    
-    if (codeResult.found && codeResult.content.length > 200) {
-      // Code extraction worked
-      makaraContent = codeResult.content;
-      extractionMethod = 'code-extracted';
-    } else {
-      // Step 3: Can't figure out with code - give raw input to LLM
-      console.log('Code extraction insufficient:', codeResult.reason);
+    // Step 3: If extraction failed or insufficient, try LLM
+    if (!results.today || results.today.length < 50) {
+      console.log('Cheerio extraction insufficient, trying LLM');
+      const llmResults = await extractWithLLM(html);
       
-      // Get raw text for LLM
-      const rawText = codeResult.text || cheerio.load(html)('body').text().substring(0, 8000);
-      
-      // Step 4: LLM extracts ONLY (no making up content)
-      const llmResult = await extractMakaraRashiWithLLM(rawText);
-      
-      if (llmResult.found) {
-        makaraContent = llmResult.content;
-        extractionMethod = 'llm-extracted';
-      } else {
-        // LLM couldn't find it either - don't make up content
-        return {
-          rashi: 'మకరం (Capricorn)',
-          today: 'ఈరోజు రాశి ఫలం Eenadu వెబ్‌సైట్‌లో అందుబాటులో లేదు.',
-          weekly: '',
-          date: new Date().toLocaleDateString('te-IN'),
-          source: 'Eenadu',
-          extractionMethod: 'not-found',
-          note: 'Content may not be available or is dynamically loaded'
-        };
+      if (llmResults.found && llmResults.today) {
+        results = llmResults;
       }
     }
     
-    // Step 5: Parse today vs weekly from extracted content
-    // Simple heuristic: first paragraph = today, rest = weekly
-    const paragraphs = makaraContent.split(/\n|\.{2,}/).filter(p => p.trim().length > 20);
-    
-    const today = paragraphs[0] || makaraContent.substring(0, 500);
-    const weekly = paragraphs.slice(1).join(' ').substring(0, 800) || 'ఈ వారం ఫలితాలు అందుబాటులో లేవు.';
+    // Validate we got something
+    if (!results.today || results.today.length < 30) {
+      return {
+        rashi: 'మకరం (Capricorn)',
+        today: 'ఈరోజు రాశి ఫలం Eenadu వెబ్‌సైట్‌లో అందుబాటులో లేదు.',
+        weekly: '',
+        date: new Date().toLocaleDateString('te-IN'),
+        source: 'Eenadu',
+        extractionMethod: 'not-found'
+      };
+    }
     
     return {
       rashi: 'మకరం (Capricorn)',
-      today: today.trim(),
-      weekly: weekly.trim(),
-      date: new Date().toLocaleDateString('te-IN', { 
+      today: results.today.trim(),
+      weekly: results.weekly ? results.weekly.trim() : 'ఈ వారం ఫలితాలు అందుబాటులో లేవు.',
+      date: results.date || new Date().toLocaleDateString('te-IN', { 
         year: 'numeric', 
         month: 'long', 
         day: 'numeric' 
       }),
       source: 'Eenadu',
-      extractionMethod: extractionMethod
+      extractionMethod: results.weekly ? 'extracted' : 'partial'
     };
     
   } catch (error) {
