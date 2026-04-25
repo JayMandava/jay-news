@@ -97,9 +97,9 @@ out
 .nuxt
 dist
 
-# Gatsby files
+# Gatsby files (not applicable for this project)
 .cache/
-public
+# public - COMMENTED OUT: we need public/ for Express static files
 
 # Storybook build outputs
 .out

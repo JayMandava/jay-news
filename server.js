@@ -24,6 +24,7 @@ const healthRoutes = require('./src/routes/health');
 const articlesRoutes = require('./src/routes/articles');
 const summarizeRoutes = require('./src/routes/summarize');
 const refreshRoutes = require('./src/routes/refresh');
+const rashiPhalaluRoutes = require('./src/routes/rashiphalalu');
 
 // Initialize Express app
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/articles', articlesRoutes);
 app.use('/api/summarize', summarizeRoutes);
 app.use('/api/refresh', refreshRoutes);
+app.use('/api/rashiphalalu', rashiPhalaluRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
