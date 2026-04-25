@@ -18,6 +18,8 @@ config/secrets.js
 *.sqlite
 *.sqlite3
 approach.db
+data/*.db
+data/*.sqlite
 
 # Logs
 logs/
