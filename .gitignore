@@ -145,3 +145,7 @@ Thumbs.db
 docs/
 *.md
 !README.md
+
+# Traceability database (contains session data)
+data/jay-news.db
+*.db-journal
