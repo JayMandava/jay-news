@@ -1,30 +1,42 @@
 /**
- * LLM Service for Rashi Extraction and Generation
- * Uses Kimi K2.5 via Fireworks AI
+ * LLM Service for Rashi Extraction
+ * 
+ * IMPORTANT: This service EXTRACTS only - does NOT create or make up content
+ * If content is not found, it returns empty/not found
  */
 
 const axios = require('axios');
 const { config } = require('../config');
 
 /**
- * Extract Makara Rashi from scraped text
+ * Extract Makara Rashi from scraped text using LLM
+ * INSTRUCTION: Extract ONLY - do NOT create or make up content
+ * 
+ * @param {string} rawText - Raw scraped text from Eenadu
+ * @returns {Promise<Object>} - {found: boolean, content: string}
  */
-async function generateRashiExtraction(rawText) {
-  const prompt = `Extract ONLY the Makara Rashi (మకరం / Capricorn) predictions from this Telugu text.
+async function extractMakaraRashiWithLLM(rawText) {
+  const prompt = `I have scraped text from Eenadu's rashi phalalu page.
 
-Text: ${rawText.substring(0, 6000)}
+RAW TEXT:
+${rawText.substring(0, 6000)}
 
-Find and return:
-1. Today's prediction (ఈరోజు రాశి ఫలం) - for మకరం only
-2. Weekly prediction (ఈ వారం రాశి ఫలం) - for మకరం only
+YOUR TASK: Extract ONLY the Makara Rashi (మకరం / Capricorn) content.
+
+INSTRUCTIONS:
+1. Search for "మకరం" in the text
+2. Extract the prediction content that follows it
+3. Include both today's prediction and weekly if available
+4. Return EXACTLY what is in the text - do NOT create or make up content
+5. If Makara Rashi content is NOT found, return empty string
+
+CRITICAL: Do NOT generate, create, or invent predictions. Only extract what exists in the text.
 
 Return JSON:
 {
-  "today": "ఈరోజు మకర రాశి వారికి...",
-  "weekly": "ఈ వారం మకర రాశి వారికి..."
-}
-
-If you cannot find Makara Rashi, return empty strings.`;
+  "found": true/false,
+  "content": "the exact Makara Rashi text from Eenadu, or empty if not found"
+}`;
 
   try {
     const response = await axios.post(
@@ -32,10 +44,13 @@ If you cannot find Makara Rashi, return empty strings.`;
       {
         model: config.ai.model,
         messages: [
-          { role: 'system', content: 'You extract Telugu horoscope content and return as JSON.' },
+          { 
+            role: 'system', 
+            content: 'You are a text extraction assistant. Your job is to FIND and EXTRACT existing content. You do NOT create or generate content.' 
+          },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 600,
+        max_tokens: 800,
         temperature: 0.1,
         response_format: { type: "json_object" }
       },
@@ -49,96 +64,21 @@ If you cannot find Makara Rashi, return empty strings.`;
     );
     
     const content = response.data.choices[0].message.content;
-    const parsed = JSON.parse(content);
-    
-    return {
-      today: parsed.today || '',
-      weekly: parsed.weekly || ''
-    };
-    
-  } catch (error) {
-    console.error('Rashi extraction error:', error.message);
-    return { today: '', weekly: '' };
-  }
-}
-
-/**
- * Generate realistic Makara Rashi predictions using LLM
- * Used when scraping/extraction fails
- */
-async function generateRashiPrediction() {
-  const today = new Date();
-  const dayName = today.toLocaleDateString('te-IN', { weekday: 'long' });
-  const dateStr = today.toLocaleDateString('te-IN', { 
-    day: 'numeric', 
-    month: 'long',
-    year: 'numeric'
-  });
-  
-  const prompt = `Generate realistic daily and weekly horoscope predictions for Makara Rashi (మకరం / Capricorn) in Telugu.
-
-Context:
-- Date: ${dateStr}
-- Day: ${dayName}
-- Rashi: మకరం (Capricorn)
-
-Generate predictions that cover:
-- Career/Job (ఉద్యోగం)
-- Finance/Money (ఆర్థికం) 
-- Health (ఆరోగ్యం)
-- Family/Relationships (కుటుంబం)
-- General luck (అదృష్టం)
-
-Return JSON:
-{
-  "today": "ఈరోజు మకర రాశి వారికి... [2-3 sentences in Telugu covering career, finance, health]",
-  "weekly": "ఈ వారం మకర రాశి వారికి... [3-4 sentences in Telugu covering overall week outlook]"
-}
-
-Make it sound authentic and positive but realistic - typical Telugu horoscope style from Eenadu.`;
-
-  try {
-    const response = await axios.post(
-      config.ai.url,
-      {
-        model: config.ai.model,
-        messages: [
-          { role: 'system', content: 'You are a Telugu astrologer writing daily horoscope predictions. Write in authentic Telugu style.' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 800,
-        temperature: 0.7,
-        response_format: { type: "json_object" }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${config.ai.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-    
-    const content = response.data.choices[0].message.content;
-    console.log('LLM generated rashi:', content.substring(0, 200));
+    console.log('LLM extraction result:', content.substring(0, 200));
     
     const parsed = JSON.parse(content);
     
     return {
-      today: parsed.today || 'ఈరోజు మకర రాశి వారికి అనుకూలమైన రోజు. ఆర్థికంగా మెరుగుదల ఉంటుంది.',
-      weekly: parsed.weekly || 'ఈ వారం మకర రాశి వారికి మిశ్రమ ఫలితాలు. జాగ్రత్తగా ఉండాలి.'
+      found: parsed.found || false,
+      content: parsed.content || ''
     };
     
   } catch (error) {
-    console.error('Rashi generation error:', error.message);
-    return {
-      today: 'ఈరోజు మకర రాశి వారికి అనుకూలమైన రోజు. కొత్త పనులను ప్రారంభించడానికి శుభసమయం.',
-      weekly: 'ఈ వారం మకర రాశి వారికి మిశ్రమ ఫలితాలు. వారం ప్రారంభంలో కొన్ని ఒత్తిడులు ఎదురైనా, మధ్యలో నుంచి పరిస్థితులు అనుకూలిస్తాయి.'
-    };
+    console.error('LLM extraction error:', error.message);
+    return { found: false, content: '' };
   }
 }
 
 module.exports = {
-  generateRashiExtraction,
-  generateRashiPrediction
+  extractMakaraRashiWithLLM
 };
