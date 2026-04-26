@@ -148,7 +148,5 @@ docs/
 
 # Traceability database (contains session data)
 data/jay-news.db
+data/implementation.db
 *.db-journal
-
-# Implementation documentation (tracked)
-!data/implementation.db
