@@ -2,7 +2,7 @@
  * తెలుగు వార్తలు (Telugu News)
  * 
  * A modern, glass-morphism styled Telugu news reader with AI-powered
- * article summarization. Fetches news from Eenadu RSS feeds and provides
+ * article summarization. Fetches fresh news from Eenadu and provides
  * instant 2-sentence summaries in Telugu using Kimi K2.5 AI.
  * 
  * @author Jay Mandava
@@ -23,7 +23,6 @@ validateConfig();
 const healthRoutes = require('./src/routes/health');
 const articlesRoutes = require('./src/routes/articles');
 const summarizeRoutes = require('./src/routes/summarize');
-const refreshRoutes = require('./src/routes/refresh');
 const rashiPhalaluRoutes = require('./src/routes/rashiphalalu');
 
 // Initialize Express app
@@ -38,7 +37,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/health', healthRoutes);
 app.use('/api/articles', articlesRoutes);
 app.use('/api/summarize', summarizeRoutes);
-app.use('/api/refresh', refreshRoutes);
 app.use('/api/rashiphalalu', rashiPhalaluRoutes);
 
 // Error handling middleware

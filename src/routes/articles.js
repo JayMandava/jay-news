@@ -1,24 +1,33 @@
 /**
  * Articles Routes
- * GET /api/articles - List top articles
+ * GET /api/articles - List fresh articles (scraped on-demand)
  */
 
 const express = require('express');
 const router = express.Router();
-const { getArticles } = require('../services/database');
-const { config } = require('../config');
+const { getFreshArticles } = require('../services/articleService');
 
 /**
  * GET /api/articles
- * Returns top 50 articles ordered by recency
+ * Scrapes Eenadu fresh and returns latest articles
  */
 router.get('/', async (req, res) => {
   try {
-    const articles = await getArticles(config.scraping.articleLimit);
-    res.json({ articles });
+    // Scrape fresh articles (like Rashiphalalu strategy)
+    const articles = await getFreshArticles(50);
+    
+    res.json({ 
+      articles,
+      count: articles.length,
+      scrapedAt: new Date().toISOString(),
+      source: 'Eenadu'
+    });
   } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Scraping error:', err);
+    res.status(500).json({ 
+      error: err.message,
+      articles: []
+    });
   }
 });
 
