@@ -31,21 +31,36 @@ router.get('/', async (req, res) => {
     console.log(`Fetching articles from: ${requestedSources.join(', ')}`);
     
     // Scrape from requested sources in parallel
+    // Fetch extra to account for deduplication, then slice to exactly 50 per source
     const scrapePromises = [];
     
     if (requestedSources.includes('eenadu')) {
       scrapePromises.push(
-        getEenaduArticles(60).then(articles => 
-          articles.map(a => ({ ...a, provider: 'Eenadu' }))
-        )
+        getEenaduArticles(70).then(articles => {
+          // Remove duplicates within this source first
+          const seen = new Set();
+          const unique = articles.filter(a => {
+            if (seen.has(a.url)) return false;
+            seen.add(a.url);
+            return true;
+          });
+          return unique.slice(0, 50).map(a => ({ ...a, provider: 'Eenadu' }));
+        })
       );
     }
     
     if (requestedSources.includes('andhrajyothi')) {
       scrapePromises.push(
-        getAndhrajyothiArticles(60).then(articles => 
-          articles.map(a => ({ ...a, provider: 'Andhrajyothi' }))
-        )
+        getAndhrajyothiArticles(70).then(articles => {
+          // Remove duplicates within this source first
+          const seen = new Set();
+          const unique = articles.filter(a => {
+            if (seen.has(a.url)) return false;
+            seen.add(a.url);
+            return true;
+          });
+          return unique.slice(0, 50).map(a => ({ ...a, provider: 'Andhrajyothi' }));
+        })
       );
     }
     
@@ -55,8 +70,7 @@ router.get('/', async (req, res) => {
     // Sort by scrapedAt (most recent first) - mix from both sources
     allArticles.sort((a, b) => new Date(b.scrapedAt) - new Date(a.scrapedAt));
     
-    // Limit total - increased to 100 since multiple providers available
-    allArticles = allArticles.slice(0, 100);
+    // Total is 50 per source when both selected, or 50 when single source
     
     res.json({ 
       articles: allArticles,
