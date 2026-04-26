@@ -64,7 +64,7 @@ async function scrapeSection(section) {
       const elements = $(selector);
       
       elements.each((i, elem) => {
-        if (articles.length >= 12) return false; // Max 12 per section
+        if (articles.length >= 20) return false; // Max 20 per section (increased for 100 total target)
         
         const $elem = $(elem);
         
@@ -102,7 +102,7 @@ async function scrapeSection(section) {
         });
       });
       
-      if (articles.length >= 12) break; // Stop if we have enough
+      if (articles.length >= 20) break; // Stop if we have enough
     }
     
     return articles;

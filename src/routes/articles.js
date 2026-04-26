@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
     
     if (requestedSources.includes('eenadu')) {
       scrapePromises.push(
-        getEenaduArticles(50).then(articles => 
+        getEenaduArticles(60).then(articles => 
           articles.map(a => ({ ...a, provider: 'Eenadu' }))
         )
       );
@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
     
     if (requestedSources.includes('andhrajyothi')) {
       scrapePromises.push(
-        getAndhrajyothiArticles(50).then(articles => 
+        getAndhrajyothiArticles(60).then(articles => 
           articles.map(a => ({ ...a, provider: 'Andhrajyothi' }))
         )
       );
@@ -55,8 +55,8 @@ router.get('/', async (req, res) => {
     // Sort by scrapedAt (most recent first) - mix from both sources
     allArticles.sort((a, b) => new Date(b.scrapedAt) - new Date(a.scrapedAt));
     
-    // Limit total
-    allArticles = allArticles.slice(0, 60);
+    // Limit total - increased to 100 since multiple providers available
+    allArticles = allArticles.slice(0, 100);
     
     res.json({ 
       articles: allArticles,

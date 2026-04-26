@@ -54,7 +54,7 @@ async function scrapeSection(section) {
     
     // Andhrajyothi structure: h3 > a (title and link)
     $('h3').each((i, elem) => {
-      if (articles.length >= 15) return false; // Max 15 per section
+      if (articles.length >= 20) return false; // Max 20 per section (increased for 100 total target)
       
       const $a = $(elem).find('a').first();
       const title = $a.text().trim();
